@@ -1,0 +1,7 @@
+{
+  "name": "Industrial Sensor Dashboard - Pirana STP",
+  "description": "A real-time industrial dashboard for monitoring 20+ sensors at the Pirana 200 MLD Sewage Treatment Plant, featuring live updates, threshold alerts, and data export.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
