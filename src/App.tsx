@@ -206,8 +206,8 @@ const SensorCard = ({
       <div className="flex justify-between items-start mb-2">
         <div>
           <h3 className={cn(
-            "text-slate-500 font-medium uppercase tracking-wider",
-            isLarge ? "text-xs" : "text-[10px]"
+            "text-slate-500 font-bold uppercase tracking-wider",
+            isLarge ? "text-sm" : "text-xs"
           )}>{config.name}</h3>
           <p className={cn(
             "text-slate-400 line-clamp-1",
