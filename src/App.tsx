@@ -70,7 +70,7 @@ const PLANT_SECTIONS: PlantSectionConfig[] = [
   },
   {
     id: 'sludge-handling',
-    label: 'Sludge Handling',
+    label: 'Tertiary Treatment',
     description: 'Sludge management, disinfection, and plant utility metrics.',
     sensorIds: ['sludge_level', 'chlorine_dose', 'residual_chlorine', 'energy', 'vibration']
   }
