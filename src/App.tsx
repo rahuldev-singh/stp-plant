@@ -39,6 +39,46 @@ import { supabase, TABLE_NAME } from './lib/supabase';
 import { cn } from './lib/utils';
 import { SENSORS, SensorConfig, SensorDataPoint, getStatus, SensorStatus } from './types';
 
+type DashboardSection = 'dashboard' | 'alerts' | 'history' | 'security' | 'config' | 'total-sensors' | 'plant-section';
+type PlantSectionId = 'inlet-section' | 'primary-treatment' | 'secondary-treatment' | 'sludge-handling';
+
+interface PlantSectionConfig {
+  id: PlantSectionId;
+  label: string;
+  description: string;
+  sensorIds: string[];
+}
+
+const PLANT_SECTIONS: PlantSectionConfig[] = [
+  {
+    id: 'inlet-section',
+    label: 'Inlet Section',
+    description: 'Raw wastewater inlet monitoring and preliminary quality checks.',
+    sensorIds: ['bod', 'cod', 'tss', 'ph', 'temp']
+  },
+  {
+    id: 'primary-treatment',
+    label: 'Primary Treatment',
+    description: 'Primary clarification and aeration control metrics.',
+    sensorIds: ['do', 'airflow', 'ote', 'tn', 'phosphorus']
+  },
+  {
+    id: 'secondary-treatment',
+    label: 'Secondary Treatment',
+    description: 'Biological treatment process performance indicators.',
+    sensorIds: ['ammonia', 'mlss', 'svi', 'ras_flow', 'was_flow']
+  },
+  {
+    id: 'sludge-handling',
+    label: 'Sludge Handling',
+    description: 'Sludge management, disinfection, and plant utility metrics.',
+    sensorIds: ['sludge_level', 'chlorine_dose', 'residual_chlorine', 'energy', 'vibration']
+  }
+];
+
+const isPlantSectionId = (value: string): value is PlantSectionId =>
+  PLANT_SECTIONS.some(section => section.id === value);
+
 // Mock data generator for when Supabase is not configured or for initial state
 const generateMockData = (sensorId: string, count: number = 20): SensorDataPoint[] => {
   const config = SENSORS.find(s => s.id === sensorId)!;
@@ -127,6 +167,7 @@ interface SensorCardProps {
   onStop: (id: string) => void;
   onClick?: () => void;
   isLarge?: boolean;
+  showAreaFill?: boolean;
   key?: string | number;
 }
 
@@ -135,7 +176,8 @@ const SensorCard = ({
   data, 
   onStop,
   onClick,
-  isLarge = false
+  isLarge = false,
+  showAreaFill = true
 }: SensorCardProps) => {
   const currentData = data[data.length - 1];
   const isCritical = currentData?.status === 'Critical';
@@ -245,8 +287,8 @@ const SensorCard = ({
               type="monotone" 
               dataKey="value" 
               stroke={config.color} 
-              fillOpacity={1} 
-              fill={`url(#gradient-${config.id})`} 
+              fillOpacity={showAreaFill ? 1 : 0}
+              fill={showAreaFill ? `url(#gradient-${config.id})` : 'transparent'}
               strokeWidth={isLarge ? 3 : 2}
               isAnimationActive={false}
             />
@@ -312,13 +354,15 @@ export default function App() {
   const [notifications, setNotifications] = useState<{ id: string; message: string; timestamp: Date; sensorId: string }[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentSection, setCurrentSection] = useState<'dashboard' | 'alerts' | 'history' | 'security' | 'config' | 'total-sensors'>('dashboard');
+  const [currentSection, setCurrentSection] = useState<DashboardSection>('dashboard');
   const [selectedHistorySensor, setSelectedHistorySensor] = useState<string | null>(null);
   const [selectedTotalSensor, setSelectedTotalSensor] = useState<string | null>(null);
+  const [selectedPlantSection, setSelectedPlantSection] = useState<PlantSectionId>(PLANT_SECTIONS[0].id);
   const [fromDate, setFromDate] = useState<string>(format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'));
   const [toDate, setToDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [showSensorsDropdown, setShowSensorsDropdown] = useState(false);
   const [showPlantDropdown, setShowPlantDropdown] = useState(false);
+  const [isRouteInitialized, setIsRouteInitialized] = useState(false);
 
   const handleStopSensor = (sensorId: string) => {
     const sensor = SENSORS.find(s => s.id === sensorId);
@@ -427,6 +471,61 @@ export default function App() {
     }
   }, [sensorData]);
 
+  useEffect(() => {
+    const syncStateFromHash = () => {
+      const hash = window.location.hash.replace(/^#\/?/, '').trim();
+      if (!hash) return;
+
+      const [route, routeParam] = hash.split('/');
+
+      if (route === 'plant') {
+        setCurrentSection('plant-section');
+        setShowPlantDropdown(true);
+        if (routeParam && isPlantSectionId(routeParam)) {
+          setSelectedPlantSection(routeParam);
+        }
+        return;
+      }
+
+      if (route === 'total-sensors') {
+        setCurrentSection('total-sensors');
+        if (routeParam && SENSORS.some(sensor => sensor.id === routeParam)) {
+          setSelectedTotalSensor(routeParam);
+        } else {
+          setSelectedTotalSensor(null);
+        }
+        return;
+      }
+
+      if (route === 'dashboard' || route === 'alerts' || route === 'history' || route === 'security' || route === 'config') {
+        setCurrentSection(route);
+      }
+    };
+
+    syncStateFromHash();
+    setIsRouteInitialized(true);
+    window.addEventListener('hashchange', syncStateFromHash);
+    return () => window.removeEventListener('hashchange', syncStateFromHash);
+  }, []);
+
+  useEffect(() => {
+    if (!isRouteInitialized) return;
+
+    let nextHash = currentSection;
+
+    if (currentSection === 'total-sensors' && selectedTotalSensor) {
+      nextHash = `total-sensors/${selectedTotalSensor}`;
+    }
+
+    if (currentSection === 'plant-section') {
+      nextHash = `plant/${selectedPlantSection}`;
+    }
+
+    if (window.location.hash !== `#${nextHash}`) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${nextHash}`);
+    }
+  }, [currentSection, selectedPlantSection, selectedTotalSensor, isRouteInitialized]);
+
   const handleExport = () => {
     const csvContent = "data:text/csv;charset=utf-8," 
       + "Sensor,Value,Unit,Status,Timestamp\n"
@@ -450,6 +549,20 @@ export default function App() {
       s.description.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [searchQuery]);
+
+  const activePlantSection = useMemo(() => {
+    return PLANT_SECTIONS.find(section => section.id === selectedPlantSection) || PLANT_SECTIONS[0];
+  }, [selectedPlantSection]);
+
+  const filteredPlantSensors = useMemo(() => {
+    return SENSORS.filter(sensor =>
+      activePlantSection.sensorIds.includes(sensor.id)
+      && (
+        sensor.name.toLowerCase().includes(searchQuery.toLowerCase())
+        || sensor.description.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    );
+  }, [activePlantSection, searchQuery]);
 
   const kpis = useMemo(() => {
     const energyData = sensorData['energy'] as SensorDataPoint[] | undefined;
@@ -583,10 +696,16 @@ export default function App() {
             {/* Plant Section Dropdown */}
             <div className="space-y-1">
               <button 
-                onClick={() => isSidebarExpanded && setShowPlantDropdown(!showPlantDropdown)}
+                onClick={() => {
+                  if (isSidebarExpanded) {
+                    setShowPlantDropdown(!showPlantDropdown);
+                  } else {
+                    setCurrentSection('plant-section');
+                  }
+                }}
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all relative group",
-                  showPlantDropdown ? "bg-blue-50 text-blue-600 shadow-sm" : "text-slate-500 hover:bg-slate-50"
+                  (showPlantDropdown || currentSection === 'plant-section') ? "bg-blue-50 text-blue-600 shadow-sm" : "text-slate-500 hover:bg-slate-50"
                 )}
               >
                 <div className="shrink-0"><Waves size={20} /></div>
@@ -605,13 +724,21 @@ export default function App() {
                     exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden pl-10 space-y-1"
                   >
-                    {['Inlet Section', 'Primary Treatment', 'Secondary Treatment', 'Sludge Handling'].map(section => (
+                    {PLANT_SECTIONS.map(section => (
                       <button 
-                        key={section}
-                        onClick={() => setCurrentSection('dashboard')}
-                        className="w-full text-left py-2 text-[11px] text-slate-500 hover:text-blue-600 transition-colors"
+                        key={section.id}
+                        onClick={() => {
+                          setSelectedPlantSection(section.id);
+                          setCurrentSection('plant-section');
+                        }}
+                        className={cn(
+                          "w-full text-left py-2 text-[11px] transition-colors",
+                          currentSection === 'plant-section' && selectedPlantSection === section.id
+                            ? "text-blue-600 font-semibold"
+                            : "text-slate-500 hover:text-blue-600"
+                        )}
                       >
-                        {section}
+                        {section.label}
                       </button>
                     ))}
                   </motion.div>
@@ -877,6 +1004,44 @@ export default function App() {
               </div>
             </section>
           ) : 
+          currentSection === 'plant-section' ? (
+            <section className="space-y-6">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 tracking-tight">{activePlantSection.label}</h2>
+                  <p className="text-slate-500 text-sm mt-1">{activePlantSection.description}</p>
+                </div>
+                <button
+                  onClick={() => setCurrentSection('dashboard')}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all shadow-md shadow-blue-600/20"
+                >
+                  Back to Dashboard
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredPlantSensors.map((sensor) => (
+                  <SensorCard
+                    key={sensor.id}
+                    config={sensor}
+                    data={sensorData[sensor.id] as SensorDataPoint[] || []}
+                    onStop={handleStopSensor}
+                    showAreaFill={selectedPlantSection !== 'primary-treatment'}
+                    onClick={() => {
+                      setSelectedTotalSensor(sensor.id);
+                      setCurrentSection('total-sensors');
+                    }}
+                  />
+                ))}
+              </div>
+
+              {filteredPlantSensors.length === 0 && (
+                <div className="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm">
+                  <p className="text-slate-500">No sensors matched this section and search filter.</p>
+                </div>
+              )}
+            </section>
+          ) :
           currentSection === 'alerts' ? (
             <section className="space-y-6">
               <div className="flex items-center justify-between mb-8">
